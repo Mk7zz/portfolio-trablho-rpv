@@ -1,0 +1,59 @@
+name: CI - Validação do Pull Request
+
+# Dispara SOMENTE quando há um Pull Request para a branch main
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  # 1) Primeiro de tudo: o index.html existe na raiz?
+  verificar-index:
+    name: Verificar index.html
+    runs-on: ubuntu-latest
+    steps:
+      - name: Baixar o código
+        uses: actions/checkout@v4
+
+      - name: Checar existência do index.html na raiz
+        run: |
+          if [ ! -f index.html ]; then
+            echo "::error::index.html não encontrado na raiz do projeto. O GitHub Pages exige esse arquivo."
+            exit 1
+          fi
+          echo "index.html encontrado."
+
+  # 2) Qualidade do código, em duas versões do Node.js ao mesmo tempo (Etapa 5)
+  qualidade:
+    name: Linter e validações (Node ${{ matrix.node-version }})
+    needs: verificar-index
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node-version: [18, 20]
+    steps:
+      - name: Baixar o código
+        uses: actions/checkout@v4
+
+      - name: Preparar o Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+
+      - name: Instalar dependências
+        run: npm install
+
+      - name: Linter de HTML (html-validate)
+        run: npm run lint
+
+      - name: Bloquear arquivos maiores que 500KB
+        run: bash scripts/check-size.sh
+
+      - name: Varredura de termos proibidos (TODO, FIXME, senha, password)
+        run: bash scripts/check-forbidden.sh
+
+      - name: Verificar tags link e img (URLs e caminhos)
+        run: bash scripts/check-links.sh
