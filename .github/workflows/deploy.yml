@@ -1,0 +1,69 @@
+name: CD - Deploy no GitHub Pages
+
+# Dispara sempre que houver código novo na main
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# Permissões necessárias para publicar no GitHub Pages
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Evita dois deploys ao mesmo tempo
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Publicar site
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Baixar o código
+        uses: actions/checkout@v4
+
+      - name: Garantir que o index.html existe
+        run: test -f index.html
+
+      - name: Montar a pasta do site (só o que vai para produção)
+        run: |
+          mkdir _site
+          cp index.html style.css _site/
+          cp -r images _site/images
+
+      - name: Configurar o Pages
+        uses: actions/configure-pages@v5
+
+      - name: Enviar artefato
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+      - name: Publicar no GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
+
+  # Etapa 4: notificação quando o deploy falhar
+  notificar-falha:
+    name: Notificar falha no Discord
+    needs: deploy
+    if: ${{ failure() }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Enviar mensagem ao Discord
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+        run: |
+          if [ -z "$DISCORD_WEBHOOK" ]; then
+            echo "Secret DISCORD_WEBHOOK não configurado; pulando."
+            exit 0
+          fi
+          curl -sS -H "Content-Type: application/json" \
+            -d "{\"content\": \"❌ Deploy FALHOU em ${{ github.repository }} (commit ${{ github.sha }}). Detalhes: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}\"}" \
+            "$DISCORD_WEBHOOK"
